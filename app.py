@@ -3,7 +3,7 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-from database import init_db, get_connection, authenticate, register_user, create_remember_token, validate_remember_token, revoke_remember_token, list_users, set_user_role
+from database import init_db, get_connection, authenticate, register_user, create_remember_token, validate_remember_token, revoke_remember_token, list_users, set_user_role, ensure_bootstrap_admin
 from pdf_reports import genera_pdf_rapportino, genera_pdf_report_mensile
 try:
     from streamlit_calendar import calendar
@@ -18,6 +18,20 @@ except Exception:
 
 st.set_page_config(page_title="Nicoli Rizzi | Gestione operativa", page_icon="🌿", layout="wide", initial_sidebar_state="collapsed")
 init_db()
+# Bootstrap amministratore: gli errori vengono mostrati senza esporre la password.
+_bootstrap_error = None
+_bootstrap_result = False
+_bootstrap_configured = False
+try:
+    _boot = st.secrets.get('bootstrap_admin', {})
+    _boot_nome = str(_boot.get('nome', '') or '').strip()
+    _boot_username = str(_boot.get('username', '') or '').strip()
+    _boot_password = str(_boot.get('password', '') or '')
+    _bootstrap_configured = bool(_boot_nome and _boot_username and _boot_password)
+    if _bootstrap_configured:
+        _bootstrap_result = bool(ensure_bootstrap_admin(_boot_nome, _boot_username, _boot_password))
+except Exception as _exc:
+    _bootstrap_error = f'{type(_exc).__name__}: {_exc}'
 conn=get_connection(); c=conn.cursor()
 
 def asset_b64(name):
@@ -78,6 +92,13 @@ if not st.session_state.get('auth_user') and cookies:
 
 # Accesso / registrazione
 if not st.session_state.get('auth_user'):
+    if _bootstrap_error:
+        st.error('ERRORE INIZIALIZZAZIONE AMMINISTRATORE: ' + _bootstrap_error)
+        st.caption('Invia questo messaggio di errore per individuare la causa. La password non viene mostrata.')
+    elif not _bootstrap_configured:
+        st.warning('Configurazione bootstrap_admin non letta o incompleta nei Secrets di Streamlit Cloud. Verifica la sezione [bootstrap_admin].')
+    elif not _bootstrap_result:
+        st.error('La configurazione bootstrap_admin è stata letta, ma l’inizializzazione non è riuscita.')
     st.markdown(f'<div class="brand">{f"<img src=\'data:image/png;base64,{logo}\' alt=\'Logo Nicoli Rizzi\'>" if logo else "<h1>NICOLI RIZZI</h1>"}<div class="subtitle">Servizi agricoli e forestali · Contoterzi</div></div>',unsafe_allow_html=True)
     a,b=st.columns(2)
     with a:
@@ -109,7 +130,7 @@ if not st.session_state.get('auth_user'):
                     uid=register_user(' '.join(nome.split()),new_username,p1)
                     st.success('Account creato. Per motivi di sicurezza, l’amministratore deve abilitarlo e assegnare il ruolo.')
                 except ValueError as e: st.error(str(e))
-    st.info('Il primo account registrato va abilitato come amministratore tramite la procedura di inizializzazione documentata nel README. Non scegliere il ruolo da un menu pubblico.')
+    st.info('Per inizializzare il primo amministratore, configura una sola volta la sezione [bootstrap_admin] nei Secrets di Streamlit Cloud, poi riavvia l’app. Le credenziali non devono essere inserite nel codice o in GitHub.')
     st.stop()
 
 user=st.session_state.auth_user; role=st.session_state.auth_role

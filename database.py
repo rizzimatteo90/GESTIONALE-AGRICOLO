@@ -47,3 +47,19 @@ def list_users():
     con=get_connection(); rows=con.execute('SELECT id,nome,username,ruolo,attivo FROM utenti_app ORDER BY nome COLLATE NOCASE').fetchall(); con.close(); return [dict(r) for r in rows]
 def set_user_role(uid,role,active=True):
     con=get_connection(); con.execute('UPDATE utenti_app SET ruolo=?,attivo=? WHERE id=?',(role,int(active),uid)); con.commit(); con.close()
+
+def ensure_bootstrap_admin(nome, username, password):
+    """Crea il primo amministratore solo se il database non contiene utenti."""
+    if not (nome and username and password):
+        return False
+    con = get_connection()
+    try:
+        count = con.execute('SELECT COUNT(*) FROM utenti_app').fetchone()[0]
+        if count != 0:
+            return False
+        con.execute("INSERT INTO utenti_app(nome,username,password_hash,ruolo,attivo) VALUES(?,?,?,'Amministratore',1)",
+                    (nome.strip(), username.strip().lower(), _hash(password)))
+        con.commit()
+        return True
+    finally:
+        con.close()
